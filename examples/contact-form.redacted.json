@@ -1,0 +1,39 @@
+{
+    "submitText": "Submit",
+    "children": {
+        "home_phone": {
+            "type": "Text",
+            "required": false
+        },
+        "name_1": {
+            "type": "Text",
+            "label": "Name",
+            "required": true,
+            "maxlength": 2048
+        },
+        "email": {
+            "type": "Email",
+            "label": "Email",
+            "required": true,
+            "maxlength": 512
+        },
+        "phone": {
+            "type": "Text",
+            "label": "Phone",
+            "required": false,
+            "maxlength": 2048
+        },
+        "website_url": {
+            "type": "URL",
+            "label": "Website URL",
+            "required": false
+        },
+        "comments": {
+            "type": "Textarea",
+            "label": "Comments",
+            "required": true,
+            "maxlength": 8192,
+            "rows": 4
+        }
+    }
+}
