@@ -32,6 +32,10 @@ For a judge test, stop after visible population unless you intentionally want to
 
 The implementation was tested for duplicate submission, stale tool reuse, unexpected parameters, email-header injection, unsafe URL schemes, prompt-injection text, invalid required values, and token/session handling. The tool keeps the existing spam-protection field empty and never fetches the supplied website URL.
 
+## Observed client behaviour
+
+During some natural-language runs, the browser client took longer to populate the required Email field than the other fields. The cause was not isolated and may reflect client, browser, extension, autocomplete, autofill or privacy-handling behaviour rather than the site workflow. The decisive acceptance checks remain that supplied values become visible, the person can review and edit them, and the form is not submitted automatically.
+
 ## Important interpretation
 
 The browser or extension's tool-runner status is not by itself proof that an agent selected the tool. The decisive acceptance evidence is the live page: the capability is discovered in the intended lifecycle, the user-supplied values are visible in the form, and human submission remains required.
