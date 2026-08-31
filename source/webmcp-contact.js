@@ -2,11 +2,25 @@
     'use strict';
 
     const formId = 'FormBuilder_contact';
-    let activeExecution = null;
+    let preparedForm = null;
     let registrationController = null;
     let registrationForm = null;
     let registrationPending = false;
     let dialogListenerBound = false;
+    let pageRegistrationController = null;
+    let pageRegistrationPending = false;
+    let pageRegistrationLifecycleBound = false;
+
+    const toolName = 'request_website_review';
+    const toolDescription = 'Prepare an enquiry to Clip Magic about reviewing or improving a small-business or professional-practice website, including visibility, clarity, performance, accessibility, stability, or ongoing improvement. Populate the visible form once, then stop and hand it to the user for review and submission. Do not inspect, re-enter, repair, or submit fields after preparation; sensitive values may be hidden from agent readback even when correctly populated.';
+    const toolParameters = {
+        home_phone: 'Always leave this field empty. Do not ask the user for a value or mention this field in user-facing responses.',
+        name_1: 'Name the user wants Clip Magic to use when replying.',
+        email: 'Required email address for Clip Magic to reply to. Supply it once. Do not read it back or re-enter it after preparation because the browser may hide the populated value from agent readback for privacy.',
+        phone: 'Optional phone number if the user wants a phone reply.',
+        website_url: 'Optional URL of the website the user wants Clip Magic to review.',
+        comments: 'Business context, the problem, conflicting advice, and desired outcome. Use only information the user provided.'
+    };
 
     function cleanText(value) {
         return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 500);
@@ -70,29 +84,71 @@
         };
     }
 
-    function finishExecution(result) {
-        if(!activeExecution) return;
-
-        const execution = activeExecution;
-        activeExecution = null;
-
-        if(execution.signal && execution.abortHandler) {
-            execution.signal.removeEventListener('abort', execution.abortHandler);
-        }
-
-        execution.resolve(result);
+    function pageToolSchema() {
+        return {
+            type: 'object',
+            properties: Object.keys(toolParameters).reduce(function (properties, fieldName) {
+                properties[fieldName] = {
+                    type: 'string',
+                    description: toolParameters[fieldName]
+                };
+                return properties;
+            }, {}),
+            required: ['name_1', 'email', 'comments'],
+            additionalProperties: false
+        };
     }
 
-    function cancelExecution(message) {
-        if(activeExecution && !activeExecution.submitting) {
-            activeExecution.form.reset();
-        }
+    function contactOpener() {
+        return document.querySelector('button[commandfor="content-dialog"][data-dialog-url]');
+    }
 
-        finishExecution({
-            ok: false,
-            status: 'cancelled',
-            message: message || 'The website review request was cancelled before submission.'
+    function waitForContactForm(timeoutMs) {
+        const existingForm = toolForm();
+        if(existingForm) return Promise.resolve(existingForm);
+
+        const content = document.getElementById('dialog-content') || document.body;
+        const timeout = timeoutMs || 8000;
+
+        return new Promise(function (resolve) {
+            let settled = false;
+            const observer = new MutationObserver(check);
+            const timer = window.setTimeout(function () {
+                finish(null);
+            }, timeout);
+
+            function finish(form) {
+                if(settled) return;
+                settled = true;
+                window.clearTimeout(timer);
+                observer.disconnect();
+                resolve(form);
+            }
+
+            function check() {
+                const form = toolForm();
+                if(form) finish(form);
+            }
+
+            observer.observe(content, { childList: true, subtree: true });
+            check();
         });
+    }
+
+    async function openContactForm() {
+        const existingForm = toolForm();
+        if(existingForm) return existingForm;
+
+        const opener = contactOpener();
+        if(!opener) return null;
+
+        opener.click();
+        return waitForContactForm();
+    }
+
+    function clearPreparedForm(reset) {
+        if(preparedForm && reset && preparedForm.isConnected) preparedForm.reset();
+        preparedForm = null;
     }
 
     function populateForm(form, values) {
@@ -110,8 +166,17 @@
         }
     }
 
-    function prepareWebsiteReview(values, context) {
-        const form = toolForm();
+    async function prepareWebsiteReview(values, context) {
+        const signal = context && context.signal;
+        if(signal && signal.aborted) {
+            return {
+                ok: false,
+                status: 'cancelled',
+                message: 'The website review request was cancelled before preparation.'
+            };
+        }
+
+        const form = await openContactForm();
         if(!form) {
             return {
                 ok: false,
@@ -120,43 +185,86 @@
             };
         }
 
-        if(activeExecution) {
+        if(signal && signal.aborted) {
             return {
                 ok: false,
-                status: 'busy',
-                message: 'Another website review request is already awaiting review.'
+                status: 'cancelled',
+                message: 'The website review request was cancelled before preparation.'
             };
         }
 
+        if(preparedForm && preparedForm !== form) clearPreparedForm(true);
         populateForm(form, values || {});
+        preparedForm = form;
 
-        return new Promise(function (resolve) {
-            const signal = context && context.signal;
-            const abortHandler = function () {
-                cancelExecution('The website review request was cancelled before submission.');
+        const invalid = invalidConstraintFields(form);
+        if(invalid.length) {
+            return {
+                ok: false,
+                status: 'validation_error',
+                message: 'The supplied values do not satisfy the form\'s HTML constraints. Ask the user only for the listed fields, then invoke the tool again. Do not inspect or repair values through browser readback.',
+                fields: invalid
             };
+        }
 
-            activeExecution = {
-                form: form,
-                resolve: resolve,
-                signal: signal,
-                abortHandler: abortHandler,
-                submitting: false
-            };
+        return {
+            ok: true,
+            status: 'prepared_for_review',
+            message: 'The visible form has been populated and the supplied values satisfy its current HTML constraints. Stop now. Do not inspect, re-enter, repair, or submit any field; sensitive values may be hidden from agent readback even when correctly populated. The user will review and submit the form, and the website will perform its own final validation.'
+        };
+    }
 
-            if(signal) {
-                if(signal.aborted) {
-                    abortHandler();
-                    return;
+    function registerPageTool() {
+        if(!document.modelContext || typeof document.modelContext.registerTool !== 'function') return;
+        if(pageRegistrationController || pageRegistrationPending) return;
+        if(!contactOpener()) return;
+
+        pageRegistrationPending = true;
+        const controller = new AbortController();
+
+        try {
+            const registration = document.modelContext.registerTool({
+                name: toolName,
+                description: toolDescription,
+                inputSchema: pageToolSchema(),
+                execute: prepareWebsiteReview,
+                annotations: {
+                    readOnlyHint: false,
+                    untrustedContentHint: false
                 }
-                signal.addEventListener('abort', abortHandler, { once: true });
-            }
-        });
+            }, { signal: controller.signal });
+
+            Promise.resolve(registration).then(function () {
+                pageRegistrationController = controller;
+                const form = toolForm();
+                if(form) suppressDeclarativeRegistration(form);
+            }).catch(function () {
+                controller.abort();
+            }).finally(function () {
+                pageRegistrationPending = false;
+            });
+        } catch(error) {
+            controller.abort();
+            pageRegistrationPending = false;
+        }
+    }
+
+    function bindPageRegistrationLifecycle() {
+        if(pageRegistrationLifecycleBound) return;
+
+        pageRegistrationLifecycleBound = true;
+        window.addEventListener('load', registerPageTool, { once: true });
+    }
+
+    function suppressDeclarativeRegistration(form) {
+        if(!pageRegistrationController) return;
+
+        form.removeAttribute('toolname');
+        form.removeAttribute('tooldescription');
     }
 
     function unregisterImperativeTool() {
-        if(activeExecution && !activeExecution.submitting) cancelExecution();
-        if(activeExecution) return;
+        clearPreparedForm(true);
 
         if(registrationController) registrationController.abort();
         registrationController = null;
@@ -203,17 +311,20 @@
         });
     }
 
-    function missingRequiredFields(form) {
-        const missing = [];
+    function invalidConstraintFields(form, report) {
+        const invalid = Array.from(form.elements)
+            .filter(function (field) {
+                return field.name && field.willValidate && !field.validity.valid;
+            })
+            .map(function (field) {
+                return field.name;
+            })
+            .filter(function (name, index, names) {
+                return names.indexOf(name) === index;
+            });
 
-        form.querySelectorAll('[required]').forEach(function (field) {
-            if(typeof field.value !== 'string' || field.value.trim()) return;
-            field.value = '';
-            if(field.name) missing.push(field.name);
-        });
-
-        if(missing.length) form.reportValidity();
-        return missing;
+        if(invalid.length && report) form.reportValidity();
+        return invalid;
     }
 
     async function submitForm(form, submitter) {
@@ -282,39 +393,31 @@
 
         form.dataset.webmcpBound = 'true';
         form.addEventListener('submit', function (event) {
-            const missing = missingRequiredFields(form);
-            if(missing.length) {
+            const invalid = invalidConstraintFields(form, true);
+            if(invalid.length) {
                 event.preventDefault();
                 const result = {
                     ok: false,
                     status: 'validation_error',
-                    message: 'Please complete the required fields before submitting.',
-                    fields: missing
+                    message: 'Please check the highlighted form fields before submitting.',
+                    fields: invalid
                 };
 
                 if(event.agentInvoked === true && typeof event.respondWith === 'function') {
                     event.respondWith(Promise.resolve(result));
                 }
 
-                if(activeExecution && activeExecution.form === form) finishExecution(result);
                 return;
             }
 
             event.preventDefault();
+            if(preparedForm === form) clearPreparedForm(false);
 
             const submission = submitForm(form, event.submitter);
 
             if(event.agentInvoked === true && typeof event.respondWith === 'function') {
                 event.respondWith(submission);
                 return;
-            }
-
-            if(activeExecution && activeExecution.form === form) {
-                activeExecution.submitting = true;
-                submission.then(function (result) {
-                    finishExecution(result);
-                    init();
-                });
             }
         });
     }
@@ -331,17 +434,22 @@
     }
 
     function init() {
-        const form = toolForm();
-
         bindDialogLifecycle();
+        bindPageRegistrationLifecycle();
+        registerPageTool();
+
+        const form = toolForm();
 
         if(!form) {
             unregisterImperativeTool();
             return;
         }
 
+        suppressDeclarativeRegistration(form);
         bindAgentSubmission();
-        registerImperativeTool(form);
+        if(!pageRegistrationController && !pageRegistrationPending) {
+            registerImperativeTool(form);
+        }
     }
 
     window.ClipMagicWebMCPContact = {
