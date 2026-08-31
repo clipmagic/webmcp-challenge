@@ -14,7 +14,7 @@ request_website_review
 
 The capability lets an agent prepare an enquiry about reviewing or improving a small-business or professional-practice website. The agent gathers only information supplied by the user, opens the existing Contact form, and populates the visible fields.
 
-The person remains in control of the consequential step: they review the populated form and click Submit themselves. The tool does not auto-submit the enquiry.
+After population, the tool returns `prepared_for_review` and stops. The person remains in control of the consequential step: they review the visible form and click Submit themselves. The tool does not auto-submit the enquiry.
 
 This is a progressively enhanced website experience, not a site-owned chatbot or an authenticated agent service.
 
@@ -55,7 +55,7 @@ See [NOTICE.md](NOTICE.md) and [docs/public-file-manifest.md](docs/public-file-m
 ## Source files
 
 - [`source/hooks-contact.php`](source/hooks-contact.php) adds the declarative WebMCP metadata to the existing FormBuilder contact form.
-- [`source/webmcp-contact.js`](source/webmcp-contact.js) registers the imperative compatibility bridge, populates the visible form, waits for human submission, and returns structured results.
+- [`source/webmcp-contact.js`](source/webmcp-contact.js) registers the page-level imperative capability and declarative compatibility fallback, opens and populates the visible form, checks native HTML constraints, and returns control to the person before submission.
 - [`examples/contact-form.redacted.json`](examples/contact-form.redacted.json) records the relevant public form schema without live recipient or internal configuration values.
 - [`docs/integration-map.md`](docs/integration-map.md) describes the small integration points in the private ProcessWire templates without publishing the complete site templates.
 
@@ -66,7 +66,7 @@ The live demonstration uses:
 1. A ProcessWire website.
 2. A licensed FormBuilder installation with a `contact` form.
 3. The fields shown in the redacted form fixture: `name_1`, `email`, `phone`, `website_url`, and `comments`, plus the existing optional spam-protection field.
-4. A page/template integration that renders Contact inline when it is opened dynamically, so the form belongs to the top-level document.
+4. A page/template integration with a Contact opener and an inline Contact form in the top-level document.
 5. A browser client with WebMCP support, such as ChatGPT's in-app browser or Chrome with WebMCP enabled.
 
 The judges do not need to install this package to evaluate the entry. They can use the live URL, the demonstration video, this source, and the testing notes.
