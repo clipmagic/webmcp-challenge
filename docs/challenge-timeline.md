@@ -13,6 +13,7 @@ The following dates are taken from the private canonical repository's dated comm
 - 27 August 2026: aligned required-field handling and rendered Contact inline for WebMCP discovery in the top-level document.
 - 28 August 2026: preserved the confirmed submission state and recorded the functional, failure, and security regression matrix.
 - 29 August 2026: completed live acceptance testing with ChatGPT's in-app browser and Chrome's WebMCP client, and prepared the challenge handoff.
+- 31 August 2026: moved imperative discovery to the homepage, added the immediate `prepared_for_review` handoff and privacy-redacted email-readback safeguard, completed clean live Sol acceptance, and recorded the demonstration footage.
 
 The relevant private source commits include:
 
@@ -22,6 +23,7 @@ e43141c 2026-08-27 Guard WebMCP submissions against whitespace-only required fie
 9d14c12 2026-08-28 Preserve WebMCP submission success state
 54f3e70 2026-08-28 Record WebMCP security regressions
 738cb91 2026-08-29 Update WebMCP test handoff
+6f70e83 2026-08-31 Update WebMCP handoff with Devpost and recording status
 ```
 
 These entries distinguish the pre-existing site from the WebMCP work added during the challenge period without publishing the private site's unrelated history.
